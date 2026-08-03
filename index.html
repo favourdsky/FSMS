@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=5">
+<meta name="color-scheme" content="light">
+<title>FSMS — Favoured School Management System</title>
+
+<!-- ══════════════════════════════════════════════════════════════
+     Why this file exists.
+
+     Apps Script serves your app inside a sandboxed iframe on
+     googleusercontent.com. A browser only reads <link rel="manifest">
+     and registers a service worker from the TOP-LEVEL document, so a
+     manifest placed inside the Apps Script page is ignored and the
+     app can never be installed. (Verified: a manifest in an iframe is
+     invisible to the installer.)
+
+     This page IS the top-level document. It carries the manifest, the
+     icons and the service worker, then loads the real FSMS in a frame
+     underneath. To the phone it is an installable app; to you it is
+     the same Apps Script deployment you already run.
+     ══════════════════════════════════════════════════════════════ -->
+
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#1E3A8A">
+<meta name="description" content="Favoured Языковой Центр — school management.">
+
+<!-- Home-screen icon. iOS ignores the manifest icons and uses this. -->
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+
+<!-- Full screen, no address bar, on both platforms. -->
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="FSMS">
+
+<style>
+  :root { --navy:#1E3A8A; --dark:#0F172A; --gold:#F4B400; }
+  * { box-sizing:border-box; }
+  html, body {
+    margin:0; padding:0; height:100%; overflow:hidden;
+    background:var(--dark);
+    font:15px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+
+  /* the Apps Script app fills the window; the notch area stays navy */
+  #app {
+    position:fixed; inset:0; width:100%; height:100%;
+    border:0; display:block; background:#F8FAFC;
+    padding-top:env(safe-area-inset-top);
+    padding-bottom:env(safe-area-inset-bottom);
+    opacity:0; transition:opacity .45s ease;
+  }
+  #app.ready { opacity:1; }
+
+  /* ---------- splash ---------- */
+  #splash {
+    position:fixed; inset:0; z-index:10;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:22px; padding:32px;
+    background:radial-gradient(120% 90% at 50% 30%, #16233f 0%, var(--dark) 70%);
+    transition:opacity .5s ease, visibility .5s;
+  }
+  #splash.hide { opacity:0; visibility:hidden; }
+
+  .mark {
+    width:132px; height:132px; object-fit:contain;
+    animation:rise .7s cubic-bezier(.2,.8,.2,1) both;
+    filter:drop-shadow(0 8px 26px rgba(244,180,0,.28));
+  }
+  @keyframes rise {
+    from { opacity:0; transform:translateY(14px) scale(.94); }
+    to   { opacity:1; transform:none; }
+  }
+
+  .wordmark {
+    color:#fff; font-size:26px; font-weight:800; letter-spacing:.14em;
+    animation:rise .7s .1s cubic-bezier(.2,.8,.2,1) both;
+  }
+  .tagline {
+    color:#94A3B8; font-size:13px; text-align:center; max-width:280px;
+    animation:rise .7s .18s cubic-bezier(.2,.8,.2,1) both;
+  }
+
+  .bar {
+    width:170px; height:3px; border-radius:3px; overflow:hidden;
+    background:rgba(255,255,255,.13);
+    animation:rise .7s .26s cubic-bezier(.2,.8,.2,1) both;
+  }
+  .bar i {
+    display:block; height:100%; width:38%; border-radius:3px;
+    background:linear-gradient(90deg, var(--navy), var(--gold));
+    animation:slide 1.15s ease-in-out infinite;
+  }
+  @keyframes slide {
+    0%   { transform:translateX(-100%); }
+    100% { transform:translateX(340%); }
+  }
+
+  /* ---------- the slow / failed case ---------- */
+  #hint {
+    position:fixed; left:0; right:0; bottom:26px; z-index:11;
+    text-align:center; color:#94A3B8; font-size:13px; padding:0 28px;
+    opacity:0; transition:opacity .4s; pointer-events:none;
+  }
+  #hint.show { opacity:1; pointer-events:auto; }
+  #hint a { color:var(--gold); font-weight:600; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .mark, .wordmark, .tagline, .bar { animation:none; }
+    .bar i { animation:none; width:100%; }
+  }
+</style>
+</head>
+<body>
+
+<div id="splash">
+  <img class="mark" src="icons/splash-mark.png" alt="">
+  <div class="wordmark">FSMS</div>
+  <div class="tagline">Favoured Языковой Центр<br>Favoured School Management System</div>
+  <div class="bar"><i></i></div>
+</div>
+
+<div id="hint">
+  Still loading&hellip; <a id="direct" href="#" target="_blank" rel="noopener">Open in the browser instead</a>
+</div>
+
+<iframe id="app"
+        title="FSMS"
+        allow="clipboard-write; camera; microphone"
+        referrerpolicy="no-referrer-when-downgrade"></iframe>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════
+   ONE thing to edit in this whole project: paste your /exec URL.
+   Deploy > Manage deployments > copy the Web app URL. It must end
+   in /exec — a /dev URL only ever works for the owning account.
+   ═══════════════════════════════════════════════════════════════ */
+var FSMS_URL = 'PASTE_YOUR_EXEC_URL_HERE';
+
+(function () {
+  var frame  = document.getElementById('app');
+  var splash = document.getElementById('splash');
+  var hint   = document.getElementById('hint');
+  var direct = document.getElementById('direct');
+
+  var configured = /^https:\/\/script\.google\.com\/.+\/exec/.test(FSMS_URL);
+
+  // Not configured yet — say so plainly under the logo instead of showing a
+  // dead frame. Deliberately NOT an early return: the service worker still
+  // has to register, or the page would never become installable and whoever
+  // is setting this up could not test the install flow.
+  if (!configured) {
+    var note = document.createElement('div');
+    note.style.cssText = 'max-width:340px;color:#94A3B8;text-align:center;font-size:13px';
+    note.innerHTML =
+      'Set <code style="color:#F4B400">FSMS_URL</code> in ' +
+      '<code style="color:#F4B400">pwa/index.html</code> to your Apps Script ' +
+      '<b>/exec</b> address, then commit again.';
+    splash.appendChild(note);
+    registerWorker();
+    return;
+  }
+
+  direct.href = FSMS_URL;
+
+  // Cache-bust so a phone that slept for a week does not resurrect a stale
+  // Apps Script page, and carry the launcher's language through.
+  var url = FSMS_URL +
+    (FSMS_URL.indexOf('?') === -1 ? '?' : '&') + 'pwa=1' +
+    '&t=' + Date.now();
+
+  var settled = false;
+  function reveal() {
+    if (settled) return;
+    settled = true;
+    frame.classList.add('ready');
+    splash.classList.add('hide');
+    hint.classList.remove('show');
+  }
+
+  frame.addEventListener('load', function () {
+    // Apps Script renders its own inner frame after the outer one loads;
+    // a short beat avoids showing a half-painted sign-in card.
+    setTimeout(reveal, 420);
+  });
+
+  frame.src = url;
+
+  // If Google is slow, offer the plain browser as an escape hatch rather
+  // than leaving somebody staring at a logo.
+  setTimeout(function () { if (!settled) hint.classList.add('show'); }, 6000);
+  // Never strand the user on the splash screen.
+  setTimeout(reveal, 20000);
+
+  registerWorker();
+
+  /* ---------- service worker ---------- *
+     Required for installability. It deliberately does NOT cache the Apps
+     Script response: FSMS is live data behind a session, and serving a
+     stale register or an old attendance list would be worse than an
+     honest "you are offline". It caches only this launcher shell. */
+  function registerWorker() {
+    if (!('serviceWorker' in navigator)) return;
+    if (document.readyState === 'complete') {
+      navigator.serviceWorker.register('sw.js').catch(function () {});
+    } else {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('sw.js').catch(function () {});
+      });
+    }
+  }
+})();
+</script>
+<script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a254c529f8cad766',t:'MTc4NTc1NDMxOA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>
